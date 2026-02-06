@@ -36,23 +36,23 @@ The system employs a **Sidecar Pattern**, spawning a local WebSocket controller 
 
 ```mermaid
 graph TD
-    subgraph "Antigravity IDE Environment"
-        Renderer[Electron Renderer (UI)]
-        ExtHost[Extension Host Process]
+    subgraph IDE [Antigravity IDE Environment]
+        Renderer(Electron Renderer UI)
+        ExtHost(Extension Host Process)
     end
 
-    subgraph "Core Engine"
-        CDP[CDP Bridge]
-        Socket[WebSocket Controller]
-        Heuristic[Heuristic Engine]
+    subgraph CORE [Core Engine]
+        CDP(CDP Bridge)
+        Socket(WebSocket Controller)
+        Heuristic(Heuristic Engine)
     end
 
-    ExtHost -- "Spawns" --> CDP
-    CDP -- "Injects Script (Port 9222)" --> Renderer
-    Renderer -- "DOM Mutation Event" --> Socket
-    Socket -- "Analyze Node" --> Heuristic
-    Heuristic -- "Valid Action?" --> Socket
-    Socket -- "Dispatch Click" --> Renderer
+    ExtHost -- Spawns --> CDP
+    CDP -- Injects Script (Port 9222) --> Renderer
+    Renderer -- DOM Mutation Event --> Socket
+    Socket -- Analyze Node --> Heuristic
+    Heuristic -- Valid Action? --> Socket
+    Socket -- Dispatch Click --> Renderer
 ```
 
 1.  **CDP Bridge**: Establishes a raw debug connection to the IDE's internal browser tabs.
