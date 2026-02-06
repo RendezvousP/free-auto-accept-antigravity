@@ -683,12 +683,12 @@
             'allow once', 'allow this conversation', 'allow'
         ];
 
-        // Use exact match for rejects to avoid matching parent containers
-        const rejectExact = ['deny', 'skip', 'reject', 'cancel', 'close', 'refine', 'ask every time'];
+        // Use loose matching for reject patterns to avoid configuration dropdowns
+        const rejectPatterns = ['deny', 'skip', 'reject', 'cancel', 'close', 'refine', 'ask every time', 'always run', 'configure'];
 
-        // Check if this button IS a reject button (exact match on button text)
-        if (rejectExact.some(r => text === r || text === r + ' all')) {
-            log(`[Skip] Button "${rawText}" is a reject button`);
+        // Check if this button matches a reject pattern
+        if (rejectPatterns.some(r => text.includes(r))) {
+            log(`[Skip] Button "${rawText}" matches reject pattern`);
             return false;
         }
 
@@ -754,26 +754,36 @@
     async function performExpand() {
         // Targeted selectors for "Expand", "Show", "Details" toggles
         const expandSelectors = [
-            // DISABLED: Causing UI flickering (clicking file tree etc.)
-            // 'div[role="button"][aria-expanded="false"]',
-            // 'button[aria-expanded="false"]',
-            // '.monaco-tl-twistie.codicon-chevron-right',
-            // 'div[title="Expand"]',
-            // 'span[class*="codicon-chevron-right"]'
+            'div[role="button"][aria-expanded="false"]',
+            'button[aria-expanded="false"]',
         ];
 
         let expandedCount = 0;
         for (const sel of expandSelectors) {
             const els = queryAll(sel);
             for (const el of els) {
-                // Don't click if already expanding
+                // --- SAFETY FILTERS (Prevent Flickering) ---
+                // Exclude File Explorer / SideBar / Settings Tree
+                if (el.matches('.monaco-tl-twistie') || el.closest('.monaco-tl-twistie')) continue;
+                if (el.closest('.monaco-list-row')) continue;
+                if (el.closest('.sidebar')) continue;
+                if (el.closest('.activity-bar')) continue;
+
+                // Exclude "Ask every time" / "Always run" dropdowns
+                const t = (el.textContent || '').toLowerCase();
+                if (t.includes('ask every time') || t.includes('always run') || t.includes('configure')) continue;
+
+                // Only allow expansion if inside content areas (Chat, Editor, Output)
+                // Heuristic: If we can't confirm it's safe, SKIP IT.
+                // But detecting "safe" is hard. Exclusion is better.
+
                 if (el.getAttribute('data-auto-expanded') === 'true') continue;
 
-                log(`[Expand] Clicking expander: ${sel}`);
+                log(`[Expand] Clicking safe expander: ${sel}`);
                 el.click();
                 el.setAttribute('data-auto-expanded', 'true'); // Prevent double click
                 expandedCount++;
-                await new Promise(r => setTimeout(r, 50)); // Tiny delay
+                await new Promise(r => setTimeout(r, 50));
             }
         }
         return expandedCount;
