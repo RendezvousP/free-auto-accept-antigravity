@@ -753,10 +753,8 @@
     // --- Helper: Auto-Expand ---
     async function performExpand() {
         // Targeted selectors for "Expand", "Show", "Details" toggles
-        const expandSelectors = [
-            'div[role="button"][aria-expanded="false"]',
-            'button[aria-expanded="false"]',
-        ];
+        // DISABLED PERMANENTLY: Causes menu flickering on Antigravity UI
+        const expandSelectors = [];
 
         let expandedCount = 0;
         for (const sel of expandSelectors) {
