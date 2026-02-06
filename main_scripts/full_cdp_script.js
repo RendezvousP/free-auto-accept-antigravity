@@ -754,13 +754,12 @@
     async function performExpand() {
         // Targeted selectors for "Expand", "Show", "Details" toggles
         const expandSelectors = [
-            // Generic "Show" buttons
-            'div[role="button"][aria-expanded="false"]',
-            'button[aria-expanded="false"]',
-            // Antigravity specifics (heuristics)
-            '.monaco-tl-twistie.codicon-chevron-right', // VS Code tree expander
-            'div[title="Expand"]',
-            'span[class*="codicon-chevron-right"]'
+            // DISABLED: Causing UI flickering (clicking file tree etc.)
+            // 'div[role="button"][aria-expanded="false"]',
+            // 'button[aria-expanded="false"]',
+            // '.monaco-tl-twistie.codicon-chevron-right',
+            // 'div[title="Expand"]',
+            // 'span[class*="codicon-chevron-right"]'
         ];
 
         let expandedCount = 0;
