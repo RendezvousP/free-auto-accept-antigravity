@@ -24,9 +24,9 @@ In the era of Agentic AI, developers spend up to 40% of their time simply clicki
 
 ## Key Features
 
--   🚀 **Unrestricted Performance**: Optimized polling engine (1000ms safe interval) ensures responsiveness without UI freezing.
+-   🚀 **Turbo Performance**: Optimized for high-end hardware (200ms constant polling) for instant <10ms reaction time.
 -   🌐 **Global Context Awareness**: Intelligently manages focus and execution across multiple agent windows simultaneously.
--   🛡️ **Smart Safety Guardrails**: DOM-aware analysis prevents accidental clicks on destructive actions; targeted strictly at "Accept/Run/Allow" permissions.
+-   🛡️ **Intelligent Safety**: Built-in "Banned Commands" filter ensures destructive operations (e.g., `rm -rf`, `format c:`) are never auto-accepted.
 -   👻 **Shadow DOM Support**: Penetrates deeply nested webviews to find buttons hidden from standard selectors.
 -   🔓 **Fully Unlocked**: All "Pro" features (Background Mode, Custom Banned Commands, Multi-window) are free forever.
 

@@ -3,7 +3,7 @@ const vscode = require('vscode');
 // --- CONSTANTS ---
 const GLOBAL_STATE_KEY = 'free-auto-accept-enabled';
 // Polling frequency in ms. Default to 100ms for responsiveness (Unlimited speed)
-const POLL_FREQUENCY = 1000; // Faster polling (1s)
+const POLL_FREQUENCY = 200; // TURBO MODE (Dual Xeon Power)
 
 // --- STATE ---
 let isEnabled = false;
@@ -113,10 +113,10 @@ async function syncSessions() {
         try {
             await cdpHandler.start({
                 isPro: true, // Pro mode
-                isBackgroundMode: false, // DISABLED: Causing cursor freeze
-                pollInterval: POLL_FREQUENCY, // UNLOCKED: High speed
+                isBackgroundMode: false, // DISABLED: Fix focus stealing bug
+                pollInterval: POLL_FREQUENCY, // 200ms
                 ide: 'antigravity',
-                bannedCommands: [] // UNLOCKED: No blocked commands by default
+                bannedCommands: ['rm -rf /', 'format c:', 'del /s /q c:\\windows'] // Basic safety
             });
         } catch (e) {
             log(`Sync error: ${e.message}`);
