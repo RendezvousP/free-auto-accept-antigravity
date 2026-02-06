@@ -28,6 +28,27 @@ git branch -M main
 echo.
 echo [6/6] Pushing to GitHub...
 git push -u origin main
+if %errorlevel% neq 0 (
+    echo.
+    echo [ERROR] Push failed. Either rights are missing OR Repo doesn't exist.
+    echo.
+    echo [AUTO-FIX] Opening GitHub to create repo 'free-auto-accept-antigravity'...
+    timeout /t 3 >nul
+    start https://github.com/new?name=free-auto-accept-antigravity^&description=Unrestricted%%20Auto%%20Accept%%20for%%20Antigravity%%20IDE^&visibility=public
+    
+    echo.
+    echo ========================================================
+    echo  INSTRUCTIONS:
+    echo  1. Browser opened the "Create a new repository" page.
+    echo  2. Scroll down and click green "Create repository" button.
+    echo  3. DO NOT change the name.
+    echo  4. Come back here and PRESS ANY KEY.
+    echo ========================================================
+    pause
+    echo.
+    echo [RETRYING] Pushing again...
+    git push -u origin main
+)
 
 echo.
 echo [SUCCESS] Repo has been pushed to: https://github.com/RendezvousP/free-auto-accept-antigravity
