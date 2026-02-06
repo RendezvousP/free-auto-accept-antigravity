@@ -771,7 +771,17 @@
 
                 // Exclude "Ask every time" / "Always run" dropdowns
                 const t = (el.textContent || '').toLowerCase();
-                if (t.includes('ask every time') || t.includes('always run') || t.includes('configure')) continue;
+                const textBlacklist = [
+                    'ask every time', 'always run', 'configure', // Permissions
+                    'model', 'gemini', 'claude', 'gpt', 'planning', 'fast', 'slow', 'mode', // Global Selectors
+                    'add conversation', 'filter' // Toolbar
+                ];
+
+                if (textBlacklist.some(bad => t.includes(bad))) continue;
+
+                // Additional check for aria-label (often used for tooltips/buttons)
+                const label = (el.getAttribute('aria-label') || '').toLowerCase();
+                if (textBlacklist.some(bad => label.includes(bad))) continue;
 
                 // Only allow expansion if inside content areas (Chat, Editor, Output)
                 // Heuristic: If we can't confirm it's safe, SKIP IT.
