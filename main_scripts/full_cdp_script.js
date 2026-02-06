@@ -512,7 +512,7 @@
      * Traverses the parent containers and their siblings to find the command text being executed.
      * Based on Antigravity DOM structure: the command is in a PRE/CODE block that's a sibling
      * of the button's parent/grandparent container.
-     * 
+     *
      * DOM Structure (Antigravity):
      *   <div> (grandparent: flex w-full...)
      *     <p>Run command?</p>
@@ -521,7 +521,7 @@
      *       <button>Accept</button>  <-- we start here
      *     </div>
      *   </div>
-     *   
+     *
      * The command text is in a PRE block that's a previous sibling of the grandparent.
      */
     function findNearbyCommandText(el) {
@@ -612,11 +612,11 @@
     /**
      * Check if a command is banned based on user-defined patterns.
      * Supports both literal substring matching and regex patterns.
-     * 
+     *
      * Pattern format (line by line in settings):
      *   - Plain text: matches as literal substring (case-insensitive)
      *   - /pattern/: treated as regex (e.g., /rm\s+-rf/ matches "rm -rf")
-     * 
+     *
      * @param {string} commandText - The extracted command text to check
      * @returns {boolean} True if command matches any banned pattern
      */
@@ -748,6 +748,36 @@
             // Give a small initial delay for the click to register
             setTimeout(check, 50);
         });
+    }
+
+    // --- Helper: Auto-Expand ---
+    async function performExpand() {
+        // Targeted selectors for "Expand", "Show", "Details" toggles
+        const expandSelectors = [
+            // Generic "Show" buttons
+            'div[role="button"][aria-expanded="false"]',
+            'button[aria-expanded="false"]',
+            // Antigravity specifics (heuristics)
+            '.monaco-tl-twistie.codicon-chevron-right', // VS Code tree expander
+            'div[title="Expand"]',
+            'span[class*="codicon-chevron-right"]'
+        ];
+
+        let expandedCount = 0;
+        for (const sel of expandSelectors) {
+            const els = queryAll(sel);
+            for (const el of els) {
+                // Don't click if already expanding
+                if (el.getAttribute('data-auto-expanded') === 'true') continue;
+
+                log(`[Expand] Clicking expander: ${sel}`);
+                el.click();
+                el.setAttribute('data-auto-expanded', 'true'); // Prevent double click
+                expandedCount++;
+                await new Promise(r => setTimeout(r, 50)); // Tiny delay
+            }
+        }
+        return expandedCount;
     }
 
     async function performClick(selectors) {
@@ -1027,7 +1057,12 @@
                 log(`Starting static poll loop...`);
                 (async function staticLoop() {
                     while (state.isRunning && state.sessionID === sid) {
+                        // 1. Expand potentially hidden blocks
+                        await performExpand();
+
+                        // 2. Click Accept/Run matches
                         performClick(['button', '[class*="button"]', '[class*="anysphere"]']);
+
                         await new Promise(r => setTimeout(r, config.pollInterval || 1000));
                     }
                 })();
