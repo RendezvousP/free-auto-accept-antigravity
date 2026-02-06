@@ -65,19 +65,27 @@ class CDPHandler {
 
     async _getPages(port) {
         return new Promise((resolve, reject) => {
-            const req = http.get({ hostname: '127.0.0.1', port, path: '/json/list', timeout: 500 }, (res) => {
+            // Increased timeout from 500ms to 2000ms for busy Xeon servers
+            const req = http.get({ hostname: '127.0.0.1', port, path: '/json/list', timeout: 2000 }, (res) => {
                 let body = '';
                 res.on('data', chunk => body += chunk);
                 res.on('end', () => {
                     try {
-                        const pages = JSON.parse(body);
-                        // Filter for pages that look like IDE windows (usually type "page" or "background_page")
-                        resolve(pages.filter(p => p.webSocketDebuggerUrl && (p.type === 'page' || p.type === 'webview')));
+                        const allPages = JSON.parse(body);
+                        const filtered = allPages.filter(p => p.webSocketDebuggerUrl && (p.type === 'page' || p.type === 'webview'));
+                        if (filtered.length > 0) {
+                            this.log(`Port ${port}: Found ${filtered.length} target pages (out of ${allPages.length})`);
+                        }
+                        resolve(filtered);
                     } catch (e) { resolve([]); }
                 });
             });
             req.on('error', () => resolve([]));
-            req.on('timeout', () => { req.destroy(); resolve([]); });
+            req.on('timeout', () => {
+                this.log(`Port ${port}: /json/list TIMEOUT`);
+                req.destroy();
+                resolve([]);
+            });
         });
     }
 
@@ -103,43 +111,58 @@ class CDPHandler {
 
         try {
             if (!conn.injected) {
+                this.log(`Injecting script into ${id}...`);
                 const scriptPath = path.join(__dirname, 'full_cdp_script.js');
                 const script = fs.readFileSync(scriptPath, 'utf8');
                 await this._evaluate(id, script);
                 conn.injected = true;
-                this.log(`Script injected into ${id}`);
+                this.log(`Script successfully injected into ${id}`);
             }
 
+            // Always try to start/sync config, in case the page reloaded or state was reset
             await this._evaluate(id, `if(window.__autoAcceptStart) window.__autoAcceptStart(${JSON.stringify(config)})`);
         } catch (e) {
-            this.log(`Injection failed for ${id}: ${e.message}`);
+            this.log(`Injection/Sync failed for ${id}: ${e.message}`);
+            // If it failed, allow re-injection next time
+            if (e.message.includes('Timeout') || e.message.includes('disconnected')) {
+                conn.injected = false;
+            }
         }
     }
 
-    async _evaluate(id, expression) {
+    async _evaluate(id, expression, retries = 2) {
         const conn = this.connections.get(id);
         if (!conn || conn.ws.readyState !== WebSocket.OPEN) return;
 
-        return new Promise((resolve, reject) => {
-            const currentId = this.msgId++;
-            const timeout = setTimeout(() => reject(new Error('CDP Timeout')), 2000);
+        for (let attempt = 0; attempt <= retries; attempt++) {
+            try {
+                return await new Promise((resolve, reject) => {
+                    const currentId = this.msgId++;
+                    // Increased timeout from 2s to 8s for slow IDE pages
+                    const timeout = setTimeout(() => reject(new Error('CDP Timeout')), 8000);
 
-            const onMessage = (data) => {
-                const msg = JSON.parse(data.toString());
-                if (msg.id === currentId) {
-                    conn.ws.off('message', onMessage);
-                    clearTimeout(timeout);
-                    resolve(msg.result);
-                }
-            };
+                    const onMessage = (data) => {
+                        const msg = JSON.parse(data.toString());
+                        if (msg.id === currentId) {
+                            conn.ws.off('message', onMessage);
+                            clearTimeout(timeout);
+                            resolve(msg.result);
+                        }
+                    };
 
-            conn.ws.on('message', onMessage);
-            conn.ws.send(JSON.stringify({
-                id: currentId,
-                method: 'Runtime.evaluate',
-                params: { expression, userGesture: true, awaitPromise: true }
-            }));
-        });
+                    conn.ws.on('message', onMessage);
+                    conn.ws.send(JSON.stringify({
+                        id: currentId,
+                        method: 'Runtime.evaluate',
+                        params: { expression, userGesture: true, awaitPromise: true }
+                    }));
+                });
+            } catch (e) {
+                if (attempt === retries) throw e;
+                this.log(`Retrying evaluation for ${id} (attempt ${attempt + 1}/${retries})...`);
+                await new Promise(r => setTimeout(r, 500)); // Wait before retry
+            }
+        }
     }
 
     async getStats() {

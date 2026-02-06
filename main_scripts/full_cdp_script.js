@@ -220,59 +220,114 @@
     Analytics.initialize(log);
 
     // --- 1. UTILS ---
-    // Deep traversal function that handles Shadow DOM and iframes
-    const collectAllRoots = (root = document) => {
-        const roots = [root];
-        const visited = new Set();
+    let cachedRoots = [document];
+    let lastScanTime = 0;
+    // Map for isAcceptButton results to avoid redundant layout-forced checks
+    const buttonResultCache = new Map();
 
-        const traverse = (node) => {
-            if (!node || visited.has(node)) return;
-            visited.add(node);
+    // Hyper-efficient recursive root search
+    const updateRoots = (force = false) => {
+        const now = Date.now();
+        // REMOVED THROTTLE: Full speed discovery for Dual Xeon responsiveness
+        if (!force && lastScanTime > 0 && now - lastScanTime < 20) return cachedRoots;
 
-            // Handle Shadow DOM
-            if (node.shadowRoot) {
-                roots.push(node.shadowRoot);
-                traverse(node.shadowRoot);
+        const roots = new Set([document]);
+        const queue = [document];
+        const processed = new Set();
+
+        while (queue.length > 0) {
+            const current = queue.shift();
+            if (processed.has(current)) continue;
+            processed.add(current);
+
+            const walker = document.createTreeWalker(
+                current instanceof Document ? (current.body || current.documentElement) : current,
+                NodeFilter.SHOW_ELEMENT,
+                {
+                    acceptNode: (node) => (node.shadowRoot || node.tagName === 'IFRAME') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP
+                }
+            );
+
+            let node;
+            while (node = walker.nextNode()) {
+                if (node.shadowRoot) {
+                    roots.add(node.shadowRoot);
+                    queue.push(node.shadowRoot);
+                }
+                if (node.tagName === 'IFRAME') {
+                    try {
+                        const doc = node.contentDocument || node.contentWindow?.document;
+                        if (doc && !roots.has(doc)) {
+                            roots.add(doc);
+                            queue.push(doc);
+                        }
+                    } catch (e) { }
+                }
             }
+        }
 
-            // Handle iframes
-            if (node.tagName === 'IFRAME' || node.tagName === 'FRAME') {
-                try {
-                    const iframeDoc = node.contentDocument || node.contentWindow?.document;
-                    if (iframeDoc) {
-                        roots.push(iframeDoc);
-                        traverse(iframeDoc.body);
+        const newRoots = Array.from(roots);
+        cachedRoots = newRoots;
+        lastScanTime = now;
+
+        // Ensure all roots are observed for mutations
+        newRoots.forEach(root => {
+            if (!root.__observed) {
+                const observer = new MutationObserver((mutations) => {
+                    buttonResultCache.clear();
+
+                    // Instant Trigger: If we see new nodes, try clicking immediately
+                    // But debounce slightly to avoid storming
+                    if (!window.__aaTriggerTimer) {
+                        window.__aaTriggerTimer = setTimeout(() => {
+                            window.__aaTriggerTimer = null;
+                            if (window.__autoAcceptState.isRunning) {
+                                performClick(['button', '.monaco-button', '[class*="button"]']).catch(() => { });
+                            }
+                        }, 10);
                     }
-                } catch (e) { /* cross-origin */ }
-            }
 
-            // Recursively check all children
-            const children = node.children || node.childNodes || [];
-            for (const child of children) {
-                if (child.nodeType === 1) traverse(child);
+                    // If a new shadow host or iframe is added, force a root update
+                    let needsRootUpdate = false;
+                    for (const m of mutations) {
+                        for (const n of m.addedNodes) {
+                            if (n.nodeType === 1 && (n.shadowRoot || n.tagName === 'IFRAME' || n.querySelector?.('iframe, [shadowroot]'))) {
+                                needsRootUpdate = true;
+                                break;
+                            }
+                        }
+                        if (needsRootUpdate) break;
+                    }
+                    if (needsRootUpdate) updateRoots(true);
+                });
+                const target = root instanceof Document ? (root.body || root.documentElement) : root;
+                if (target) {
+                    observer.observe(target, { childList: true, subtree: true });
+                    root.__observed = true;
+                }
             }
-        };
+        });
 
-        traverse(root.body || root.documentElement || root);
-        return roots;
+        return cachedRoots;
     };
+
+    // Initial scan
+    updateRoots(true);
 
     const queryAll = (selector) => {
         const results = [];
-        collectAllRoots().forEach(root => {
-            try {
-                if (root.querySelectorAll) {
-                    results.push(...Array.from(root.querySelectorAll(selector)));
-                }
-            } catch (e) { }
+        updateRoots().forEach(root => {
+            if (root.querySelectorAll) {
+                try {
+                    results.push(...root.querySelectorAll(selector));
+                } catch (e) { }
+            }
         });
         return results;
     };
 
     // Helper to strip time suffixes like "3m", "4h", "12s"
-    const stripTimeSuffix = (text) => {
-        return (text || '').trim().replace(/\s*\d+[smh]$/, '').trim();
-    };
+    const stripTimeSuffix = (text) => (text || '').trim().replace(/\s*\d+[smh]$/, '').trim();
 
     // Helper to deduplicate tab names by appending (2), (3), etc.
     const deduplicateNames = (names) => {
@@ -294,12 +349,10 @@
 
         // Don't clear tabs if temporarily empty (DOM refresh) - keep previous state
         if (tabNames.length === 0 && window.__autoAcceptState.tabNames?.length > 0) {
-            log(`updateTabNames: Tabs temporarily empty, keeping previous state (${window.__autoAcceptState.tabNames.length} tabs)`);
             return;
         }
 
         if (JSON.stringify(window.__autoAcceptState.tabNames) !== JSON.stringify(tabNames)) {
-            log(`updateTabNames: Detected ${tabNames.length} tabs: ${tabNames.join(', ')}`);
             window.__autoAcceptState.tabNames = tabNames;
         }
     };
@@ -408,11 +461,9 @@
         const container = document.getElementById('aab-c');
 
         if (!container) {
-            log('[Overlay] updateOverlay: No container found, skipping');
             return;
         }
 
-        log(`[Overlay] updateOverlay call: tabNames count=${state.tabNames?.length || 0}`);
         const newNames = state.tabNames || [];
 
         // Handle waiting state
@@ -483,7 +534,6 @@
 
                 slot.appendChild(track);
                 container.appendChild(slot);
-                log(`[Overlay] Created slot: ${name} (${statusText})`);
             } else {
                 // Update existing
                 slot.className = `aab-slot ${statusClass}`;
@@ -595,11 +645,31 @@
         }
 
         // Strategy 3: Check aria-label and title attributes
-        if (el.getAttribute('aria-label')) {
-            commandText += ' ' + el.getAttribute('aria-label');
+        if (el.getAttribute('aria-label')) commandText += ' ' + el.getAttribute('aria-label');
+        if (el.getAttribute('title')) commandText += ' ' + el.getAttribute('title');
+
+        // Strategy 4: Search ancestor text nodes (robust for Antigravity)
+        if (commandText.length < 10) {
+            let p = el.parentElement;
+            for (let i = 0; i < 6 && p; i++) {
+                // If we find a container that looks like a dialog (role="dialog" or specific classes)
+                // we scan its entire content.
+                if (p.getAttribute('role') === 'dialog' || p.classList.contains('monaco-dialog-box')) {
+                    commandText += ' ' + p.textContent;
+                    break;
+                }
+                commandText += ' ' + p.textContent;
+                p = p.parentElement;
+            }
         }
-        if (el.getAttribute('title')) {
-            commandText += ' ' + el.getAttribute('title');
+
+        // Strategy 5: Check inputs/textareas in the same container
+        if (commandText.length < 10) {
+            let container = el.closest('.monaco-dialog-box') || el.closest('[role="dialog"]') || el.parentElement?.parentElement;
+            if (container) {
+                const inputs = container.querySelectorAll('input, textarea');
+                inputs.forEach(input => { commandText += ' ' + (input.value || ''); });
+            }
         }
 
         const result = commandText.trim().toLowerCase();
@@ -671,48 +741,96 @@
 
     // --- 4. CLICKING LOGIC ---
     function isAcceptButton(el) {
+        // Fast exit: check cache
+        if (buttonResultCache.has(el)) return buttonResultCache.get(el);
+
         const rawText = (el.textContent || "").trim();
         const text = rawText.toLowerCase();
 
+        const check = () => {
+            if (text.length === 0 || text.length > 60) return false;
 
-        if (text.length === 0 || text.length > 50) return false;
-
-        // Extended patterns for Antigravity IDE dialogs
-        const patterns = [
-            'accept', 'accept all', 'run', 'retry', 'apply', 'execute', 'confirm',
-            'allow once', 'allow this conversation', 'allow'
-        ];
-
-        // Use loose matching for reject patterns to avoid configuration dropdowns
-        const rejectPatterns = ['deny', 'skip', 'reject', 'cancel', 'close', 'refine', 'ask every time', 'always run', 'configure'];
-
-        // Check if this button matches a reject pattern
-        if (rejectPatterns.some(r => text.includes(r))) {
-            log(`[Skip] Button "${rawText}" matches reject pattern`);
-            return false;
-        }
-
-        // Check if any accept pattern matches
-        if (!patterns.some(p => text.includes(p))) {
-            return false;
-        }
-
-
-        // Check if this is a command execution button by looking for "run command" or similar
-        const isCommandButton = text.includes('run command') || text.includes('execute') || text.includes('run');
-
-        // If it's a command button, check if the command is banned
-        if (isCommandButton) {
-            const nearbyText = findNearbyCommandText(el);
-            if (isCommandBanned(nearbyText)) {
-                log(`[BANNED] Skipping button: "${text}" - command is banned`);
+            // 1. EXCLUSIONS (Strictly avoid dropdowns and floating menus)
+            if (el.getAttribute('aria-haspopup') === 'true' ||
+                el.getAttribute('aria-expanded') !== null ||
+                el.closest('.monaco-menu-container') ||
+                el.closest('.context-view')) {
                 return false;
             }
-        }
 
-        const style = window.getComputedStyle(el);
-        const rect = el.getBoundingClientRect();
-        return style.display !== 'none' && rect.width > 0 && style.pointerEvents !== 'none' && !el.disabled;
+            const className = (el.className || "").toLowerCase();
+            const blacklistClasses = ['dropdown', 'toggle', 'chevron', 'arrow', 'settings', 'gear'];
+            if (blacklistClasses.some(c => className.includes(c))) return false;
+
+            // EXCLUSION: Don't click buttons matching specific parent styles (to avoid toolbar items)
+            if (el.closest('.monaco-toolbar')) return false;
+
+            // 2. PATTERNS
+            const patterns = [
+                'accept', 'run', 'retry', 'apply', 'execute', 'confirm',
+                'allow', 'always run', 'approve', 'proceed', 'ok', 'yes'
+            ];
+
+            const rejectPatterns = ['deny', 'skip', 'reject', 'cancel', 'close', 'refine', 'configure', 'ask every time'];
+
+            const hasAcceptWord = patterns.some(p => text.includes(p));
+            const hasRejectWord = rejectPatterns.some(r => text.includes(r));
+
+            if (hasRejectWord) return false;
+
+            // Special Case: "Run Alt+..." or "Run ⏎" is always a primary accept button
+            // Broaden to include just "Run" if it's a monaco-button
+            const isRunShortcut = text.includes('run') && (text.includes('alt') || text.includes('enter') || text.includes('⏎'));
+
+            if (!hasAcceptWord && !isRunShortcut) return false;
+
+            // 3. SAFETY (Banned Commands)
+            if (text.includes('run') || text.includes('execute')) {
+                const nearbyText = findNearbyCommandText(el);
+                if (isCommandBanned(nearbyText)) {
+                    log(`[Safety] BANNED: "${nearbyText.substring(0, 50)}..."`);
+                    return false;
+                }
+            }
+
+            // 4. VISIBILITY & USABILITY
+            const style = window.getComputedStyle(el);
+            const rect = el.getBoundingClientRect();
+
+            // ULTRA-RELAXED VISIBILITY for high-confidence 'Run' buttons
+            const isRunButton = text.includes('run') || text.includes('accept');
+            const minSize = isRunButton ? 0 : 1; // Trust run buttons even if tiny/scaling
+
+            const isVisible = style.display !== 'none' &&
+                style.visibility !== 'hidden' &&
+                style.opacity !== '0' &&
+                rect.width > minSize &&
+                rect.height > minSize;
+
+            if (!isVisible) {
+                if (isRunButton && Math.random() < 0.1) {
+                    log(`[Diagnostic] Run button found but hidden/0-size: "${text}" (display=${style.display}, vis=${style.visibility}, op=${style.opacity}, rect=${rect.width}x${rect.height})`);
+                }
+                return false;
+            }
+
+            // EXCLUSION: Only reject 'always run' if there's a better 'Run' button nearby
+            if (text === 'always run' && el.classList.contains('monaco-text-button')) {
+                // Check if this is part of a dropdown pair
+                const parent = el.parentElement;
+                if (parent && parent.querySelector('.monaco-button:not(.monaco-text-button)')) {
+                    return false; // Skip the secondary 'always run' part of a split button
+                }
+            }
+
+            if (el.classList.contains('monaco-button')) return true;
+
+            return style.pointerEvents !== 'none' && !el.disabled && !el.hasAttribute('data-aa-clicked');
+        };
+
+        const result = check();
+        buttonResultCache.set(el, result);
+        return result;
     }
 
     /**
@@ -799,6 +917,42 @@
         return expandedCount;
     }
 
+    // --- 5. MAIN LOOP ---
+    async function staticLoop(sid) {
+        const state = window.__autoAcceptState;
+        if (!state || !state.isRunning || state.sessionID !== sid) {
+            log(`[Loop] Terminating stale session ${sid}`);
+            return;
+        }
+
+        const startTime = performance.now();
+        try {
+            // Broaden selectors to catch all potential button-like elements in Antigravity/Cursor
+            const selectors = [
+                'button:not([disabled])',
+                'div[role="button"]:not([disabled])',
+                '.monaco-button:not(.disabled)',
+                '.bg-ide-button-background',
+                '[class*="button"]' // High-risk but necessary fallback
+            ];
+            await performClick(selectors);
+        } catch (e) {
+            log(`STALL ERROR: ${e.message}\n${e.stack}`);
+        }
+
+        const duration = performance.now() - startTime;
+        if (duration > 200) {
+            log(`[Performance] SLOW LOOP: ${duration.toFixed(1)}ms. Active roots: ${cachedRoots.length}`);
+        }
+
+        // Delay: 50ms if fast, longer if slow.
+        const nextDelay = duration > 100 ? 100 : 50;
+        setTimeout(() => staticLoop(sid), nextDelay);
+    }
+
+    // Periodically clear the button result cache to handle dynamic changes
+    setInterval(() => buttonResultCache.clear(), 1000);
+
     async function performClick(selectors) {
         // Skip if user is focused on input/textarea (typing)
         const activeEl = document.activeElement;
@@ -815,10 +969,32 @@
         for (const el of uniqueFound) {
             if (isAcceptButton(el)) {
                 const buttonText = (el.textContent || "").trim();
+
+                // Extra check: If we've clicked this element recently, only click again if text changed
+                const lastClickedText = el.getAttribute('data-aa-text');
+                if (el.hasAttribute('data-aa-clicked')) {
+                    if (lastClickedText === buttonText) {
+                        // Truly a redundant click on the same button state
+                        log(`[Throttle] Skipping recently clicked button with same text: "${buttonText}"`);
+                        continue;
+                    } else {
+                        // Text changed! It's a recycled element (e.g. next command in queue)
+                        el.removeAttribute('data-aa-clicked');
+                    }
+                }
+
                 log(`Clicking: "${buttonText}"`);
 
+                // Tag as clicked with current text state
+                el.setAttribute('data-aa-clicked', Date.now());
+                el.setAttribute('data-aa-text', buttonText);
 
-                // Try native click first (most reliable for native buttons)
+                // Remove tag after 250ms (enough to skip redundant cycles but fast for batching)
+                setTimeout(() => {
+                    if (el.isConnected) el.removeAttribute('data-aa-clicked');
+                }, 250);
+
+                // Try native click first
                 if (typeof el.click === 'function') {
                     el.click();
                 }
@@ -827,17 +1003,9 @@
                 el.dispatchEvent(new MouseEvent('click', { view: window, bubbles: true, cancelable: true }));
                 clicked++;
 
-                // Wait for button to disappear (verification)
-                const disappeared = await waitForDisappear(el);
-
-                if (disappeared) {
-                    // Only count if button actually disappeared (action was successful)
-                    Analytics.trackClick(buttonText, log);
-                    verified++;
-                    log(`[Stats] Click verified (button disappeared)`);
-                } else {
-                    log(`[Stats] Click not verified (button still visible after 500ms)`);
-                }
+                // NO AWAIT: Fire and move to the next item for instant response
+                Analytics.trackClick(buttonText, log);
+                verified++;
             }
         }
 
@@ -1072,19 +1240,8 @@
                 if (ide === 'cursor') cursorLoop(sid);
                 else antigravityLoop(sid);
             } else {
-                hideOverlay();
-                log(`Starting static poll loop...`);
-                (async function staticLoop() {
-                    while (state.isRunning && state.sessionID === sid) {
-                        // 1. Expand potentially hidden blocks
-                        await performExpand();
-
-                        // 2. Click Accept/Run matches
-                        performClick(['button', '[class*="button"]', '[class*="anysphere"]']);
-
-                        await new Promise(r => setTimeout(r, config.pollInterval || 1000));
-                    }
-                })();
+                log(`Starting static poll loop... (SID: ${sid})`);
+                staticLoop(sid);
             }
         } catch (e) {
             log(`ERROR in __autoAcceptStart: ${e.message}`);
