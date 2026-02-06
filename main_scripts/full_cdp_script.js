@@ -774,7 +774,9 @@
                 const textBlacklist = [
                     'ask every time', 'always run', 'configure', // Permissions
                     'model', 'gemini', 'claude', 'gpt', 'planning', 'fast', 'slow', 'mode', // Global Selectors
-                    'add conversation', 'filter' // Toolbar
+                    'add conversation', 'filter', // Toolbar
+                    'customizations', 'mcp servers', // Top right menu
+                    'add context', 'media', 'mentions', 'workflows' // Bottom left context menu
                 ];
 
                 if (textBlacklist.some(bad => t.includes(bad))) continue;
