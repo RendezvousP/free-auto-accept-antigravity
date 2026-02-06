@@ -1,0 +1,11 @@
+# Enforce Unix newlines
+* text=auto eol=lf
+
+# Deny text handling for binary files
+*.png binary
+*.jpg binary
+*.vsix binary
+
+# Linguist overrides (optional but good for stats)
+*.js linguist-language=JavaScript
+*.md linguist-language=Markdown

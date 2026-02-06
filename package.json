@@ -1,0 +1,29 @@
+{
+    "name": "free-auto-accept",
+    "displayName": "Free Auto Accept",
+    "description": "Unrestricted Auto Accept for Antigravity - No Limits, Background Mode Enabled",
+    "version": "9.9.9",
+    "publisher": "AntigravityUser",
+    "engines": {
+        "vscode": "^1.75.0"
+    },
+    "activationEvents": [
+        "onStartupFinished"
+    ],
+    "main": "./extension.js",
+    "contributes": {
+        "commands": [
+            {
+                "command": "free-auto-accept.toggle",
+                "title": "Free Auto Accept: Toggle ON/OFF"
+            },
+            {
+                "command": "free-auto-accept.relaunch",
+                "title": "Free Auto Accept: Relaunch (Fix connection)"
+            }
+        ]
+    },
+    "dependencies": {
+        "ws": "^8.13.0"
+    }
+}
