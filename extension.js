@@ -6,7 +6,7 @@ const GLOBAL_STATE_KEY = 'free-auto-accept-enabled';
 const POLL_FREQUENCY = 50; // ULTRA TURBO MODE (Instant Reaction)
 
 // --- STATE ---
-let isEnabled = false;
+let isEnabled = true;
 let pollTimer;
 let statusBarItem;
 let outputChannel;
@@ -37,7 +37,7 @@ async function activate(context) {
     statusBarItem.show();
 
     // 3. Initialize State
-    isEnabled = false; // Always start OFF to avoid UI freeze
+    isEnabled = true; // Always start ON for instant action
 
     // 4. Initialize Handlers
     try {
@@ -57,10 +57,11 @@ async function activate(context) {
         vscode.commands.registerCommand('free-auto-accept.relaunch', () => handleRelaunch())
     );
 
-    // 6. Start if enabled
-    if (isEnabled) {
-        startPolling();
-    }
+    // 6. Force Auto-Start (Always ON)
+    isEnabled = true;
+    startPolling();
+    updateStatusBar();
+    log('Free Auto Accept: Force-Activated at startup.');
 }
 
 async function handleToggle(context) {
@@ -100,7 +101,7 @@ async function startPolling() {
     // Poll to keep sessions active
     pollTimer = setInterval(() => {
         if (isEnabled) syncSessions();
-    }, 2000); // Check for new windows every 2s
+    }, 100); // Check for new windows every 0.1s
 }
 
 async function stopPolling() {
