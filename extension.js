@@ -3,7 +3,7 @@ const vscode = require('vscode');
 // --- CONSTANTS ---
 const GLOBAL_STATE_KEY = 'free-auto-accept-enabled';
 // Polling frequency in ms. Default to 100ms for responsiveness (Unlimited speed)
-const POLL_FREQUENCY = 50; // ULTRA TURBO MODE (Instant Reaction)
+const POLL_FREQUENCY = 1000; // Eco Mode (RAM Safe)
 
 // --- STATE ---
 let isEnabled = true;
@@ -36,8 +36,9 @@ async function activate(context) {
     updateStatusBar();
     statusBarItem.show();
 
-    // 3. Initialize State
-    isEnabled = true; // Always start ON for instant action
+    // 3. Initialize State - ALWAYS ON after activation
+    isEnabled = true;
+    await context.globalState.update(GLOBAL_STATE_KEY, true);
 
     // 4. Initialize Handlers
     try {
@@ -57,11 +58,10 @@ async function activate(context) {
         vscode.commands.registerCommand('free-auto-accept.relaunch', () => handleRelaunch())
     );
 
-    // 6. Force Auto-Start (Always ON)
-    isEnabled = true;
+    // 6. Auto-start polling
     startPolling();
+    log('Free Auto Accept: ON (auto-started).');
     updateStatusBar();
-    log('Free Auto Accept: Force-Activated at startup.');
 }
 
 async function handleToggle(context) {
@@ -101,7 +101,7 @@ async function startPolling() {
     // Poll to keep sessions active
     pollTimer = setInterval(() => {
         if (isEnabled) syncSessions();
-    }, 100); // Check for new windows every 0.1s
+    }, POLL_FREQUENCY);
 }
 
 async function stopPolling() {
@@ -113,11 +113,11 @@ async function syncSessions() {
     if (cdpHandler) {
         try {
             await cdpHandler.start({
-                isPro: true, // Pro mode
-                isBackgroundMode: false, // DISABLED: Fix focus stealing bug
-                pollInterval: POLL_FREQUENCY, // 200ms
+                isPro: true,
+                isBackgroundMode: true, // ENABLED: Background auto-accept
+                pollInterval: POLL_FREQUENCY,
                 ide: 'antigravity',
-                bannedCommands: ['rm -rf /', 'format c:', 'del /s /q c:\\windows'] // Basic safety
+                bannedCommands: ['rm -rf /', 'format c:', 'del /s /q c:\\windows', 'taskkill']
             });
         } catch (e) {
             log(`Sync error: ${e.message}`);

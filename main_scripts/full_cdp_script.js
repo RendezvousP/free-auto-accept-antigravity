@@ -860,10 +860,9 @@
                 } else if (Date.now() - startTime >= timeout) {
                     resolve(false);
                 } else {
-                    requestAnimationFrame(check);
+                    requestAnimationFrame(check); // Restored for reload stability
                 }
             };
-            // Give a small initial delay for the click to register
             setTimeout(check, 50);
         });
     }
@@ -1072,74 +1071,20 @@
     }
 
     async function antigravityLoop(sid) {
-        log('[Loop] antigravityLoop STARTED');
-        let index = 0;
+        log('[Loop] antigravityLoop STARTED (NO TAB CYCLING)');
         let cycle = 0;
         while (window.__autoAcceptState.isRunning && window.__autoAcceptState.sessionID === sid) {
             cycle++;
-            log(`[Loop] Cycle ${cycle}: Starting...`);
 
-            // REMOVED BADGE CHECK: Always attempt to click
-            // This prevents the agent from freezing if a badge exists from a previous turn
-            log(`[Loop] Cycle ${cycle}: Force scanning for buttons...`);
+            // ONLY click Accept/Run/Retry buttons - DO NOT touch tabs or conversations
+            const clicked = await performClick(['button', '[role="button"]', 'div[role="button"]', '.bg-ide-button-background', '[class*="button"]']);
 
-            // Click accept/run buttons (Aggressive text-based matching)
-            const clicked = await performClick(['button', '[role="button"]', 'div[role="button"]', '.bg-ide-button-background', '[class*="button"]', '[class*="btn"]']);
-            log(`[Loop] Cycle ${cycle}: Clicked ${clicked} accept buttons`);
-
-            await new Promise(r => setTimeout(r, 800));
-
-            // Click tab panel button to ensure tabs are visible/cycled
-            const nt = queryAll("[data-tooltip-id='new-conversation-tooltip']")[0];
-            if (nt) {
-                log(`[Loop] Cycle ${cycle}: Clicking tab panel button`);
-                nt.click();
-            }
-            await new Promise(r => setTimeout(r, 1500)); // Longer wait for DOM to settle
-
-            // Query existing tabs
-            const tabsAfter = queryAll('button.grow');
-            log(`[Loop] Cycle ${cycle}: Found ${tabsAfter.length} tabs`);
-            updateTabNames(tabsAfter);
-
-            // Click next tab in rotation and check its completion
-            let clickedTabName = null;
-            if (tabsAfter.length > 0) {
-                const targetTab = tabsAfter[index % tabsAfter.length];
-                clickedTabName = stripTimeSuffix(targetTab.textContent);
-                log(`[Loop] Cycle ${cycle}: Clicking tab "${clickedTabName}"`);
-                targetTab.dispatchEvent(new MouseEvent('click', { view: window, bubbles: true, cancelable: true }));
-                index++;
+            if (clicked > 0) {
+                log(`[Loop] Cycle ${cycle}: Clicked ${clicked} accept buttons`);
             }
 
-            // Wait longer for content to load (1.5s instead of 0.5s)
-            await new Promise(r => setTimeout(r, 1500));
-
-            // Check for completion badges (Good/Bad) after clicking
-            const allSpansAfter = queryAll('span');
-            const feedbackTexts = allSpansAfter
-                .filter(s => {
-                    const t = s.textContent.trim();
-                    return t === 'Good' || t === 'Bad';
-                })
-                .map(s => s.textContent.trim());
-
-            log(`[Loop] Cycle ${cycle}: Found ${feedbackTexts.length} Good/Bad badges`);
-
-            // Update completion status for the tab we just clicked
-            if (clickedTabName && feedbackTexts.length > 0) {
-                updateConversationCompletionState(clickedTabName, 'done');
-            } else if (clickedTabName && !window.__autoAcceptState.completionStatus[clickedTabName]) {
-                // Leave as undefined (WAITING)
-            }
-
-            const state = window.__autoAcceptState;
-            log(`[Loop] Cycle ${cycle}: State = { tabs: ${state.tabNames?.length || 0}, completions: ${JSON.stringify(state.completionStatus)} }`);
-
-            updateOverlay();
-            log(`[Loop] Cycle ${cycle}: Overlay updated, waiting 3s...`);
-
-            await new Promise(r => setTimeout(r, 3000));
+            // Wait 1s between scans
+            await new Promise(r => setTimeout(r, 1000));
         }
         log('[Loop] antigravityLoop STOPPED');
     }

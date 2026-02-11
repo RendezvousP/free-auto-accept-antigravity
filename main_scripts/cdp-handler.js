@@ -11,6 +11,7 @@ class CDPHandler {
         this.logger = logger;
         this.connections = new Map(); // port:pageId -> {ws, injected}
         this.isEnabled = false;
+        this.isScanning = false;
         this.msgId = 1;
     }
 
@@ -34,26 +35,45 @@ class CDPHandler {
     /**
      * Start/maintain the CDP connection and injection loop
      */
+    /**
+     * Start/maintain the CDP connection and injection loop
+     * CRITICAL FIX: Added locking to prevent async overlap flooding
+     */
     async start(config) {
-        this.isEnabled = true;
-        this.log(`Scanning ports ${BASE_PORT - PORT_RANGE} to ${BASE_PORT + PORT_RANGE}...`);
+        if (this.isScanning) {
+            this.log('Scan already in progress, skipping...');
+            return;
+        }
 
-        for (let port = BASE_PORT - PORT_RANGE; port <= BASE_PORT + PORT_RANGE; port++) {
-            try {
-                const pages = await this._getPages(port);
-                for (const page of pages) {
-                    const id = `${port}:${page.id}`;
-                    if (!this.connections.has(id)) {
-                        await this._connect(id, page.webSocketDebuggerUrl);
+        this.isEnabled = true;
+        this.isScanning = true;
+
+        try {
+            this.log(`Scanning ports ${BASE_PORT - PORT_RANGE} to ${BASE_PORT + PORT_RANGE}...`);
+
+            for (let port = BASE_PORT - PORT_RANGE; port <= BASE_PORT + PORT_RANGE; port++) {
+                if (!this.isEnabled) break; // Early exit
+                try {
+                    const pages = await this._getPages(port);
+                    for (const page of pages) {
+                        const id = `${port}:${page.id}`;
+                        if (!this.connections.has(id)) {
+                            await this._connect(id, page.webSocketDebuggerUrl);
+                        }
+                        await this._inject(id, config);
                     }
-                    await this._inject(id, config);
+                } catch (e) {
+                    // Ignore port errors
                 }
-            } catch (e) { }
+            }
+        } finally {
+            this.isScanning = false;
         }
     }
 
     async stop() {
         this.isEnabled = false;
+        this.isScanning = false;
         for (const [id, conn] of this.connections) {
             try {
                 await this._evaluate(id, 'if(window.__autoAcceptStop) window.__autoAcceptStop()');
