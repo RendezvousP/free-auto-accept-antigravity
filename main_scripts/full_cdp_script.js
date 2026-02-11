@@ -778,6 +778,12 @@
 
             if (hasRejectWord) return false;
 
+            // SUPER-OVERRIDE: If it's a pure "Run" command button, click it immediately
+            // Antigravity often uses "Run" or "Run Command"
+            if (text === 'run' || text === 'run command' || text === 'allow' || text === 'yes') {
+                return true;
+            }
+
             // Special Case: "Run Alt+..." or "Run ⏎" is always a primary accept button
             // Broaden to include just "Run" if it's a monaco-button
             const isRunShortcut = text.includes('run') && (text.includes('alt') || text.includes('enter') || text.includes('⏎'));

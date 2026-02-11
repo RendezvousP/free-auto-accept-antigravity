@@ -3,7 +3,7 @@ const vscode = require('vscode');
 // --- CONSTANTS ---
 const GLOBAL_STATE_KEY = 'free-auto-accept-enabled';
 // Polling frequency in ms. Default to 100ms for responsiveness (Unlimited speed)
-const POLL_FREQUENCY = 1000; // Eco Mode (RAM Safe)
+const POLL_FREQUENCY = 200; // Turbo Mode (Instant)
 
 // --- STATE ---
 let isEnabled = true;
